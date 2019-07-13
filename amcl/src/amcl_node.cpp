@@ -950,6 +950,7 @@ AmclNode::freeMapDependentMemory()
 /**
  * Convert an OccupancyGrid map message into the internal
  * representation.  This allocates a map_t and returns it.
+ amcl接收网格地图后对数据做了处理 https://blog.csdn.net/xiekaikaibing/article/details/80366908
  */
 map_t*
 AmclNode::convertMap( const nav_msgs::OccupancyGrid& map_msg )
@@ -967,11 +968,11 @@ AmclNode::convertMap( const nav_msgs::OccupancyGrid& map_msg )
   ROS_ASSERT(map->cells);
   for(int i=0;i<map->size_x * map->size_y;i++)
   {
-    if(map_msg.data[i] == 0)
+    if(map_msg.data[i] == 0)//0的网格视为未知
       map->cells[i].occ_state = -1;
-    else if(map_msg.data[i] == 100)
+    else if(map_msg.data[i] == 100)//100的网格视为障碍物
       map->cells[i].occ_state = +1;
-    else
+    else//其余均视为可通行
       map->cells[i].occ_state = 0;
   }
 
