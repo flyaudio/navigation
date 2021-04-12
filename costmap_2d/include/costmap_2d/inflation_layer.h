@@ -169,7 +169,7 @@ private:
   void computeCaches();
   void deleteKernels();
   void inflate_area(int min_i, int min_j, int max_i, int max_j, unsigned char* master_grid);
-
+//meter unit-> pixel unit
   unsigned int cellDistance(double world_dist)
   {
     return layered_costmap_->getCostmap()->cellDistance(world_dist);

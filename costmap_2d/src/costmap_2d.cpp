@@ -177,7 +177,7 @@ Costmap2D::~Costmap2D()
   deleteMaps();
   delete access_;
 }
-
+//meter unit -> pixel unit
 unsigned int Costmap2D::cellDistance(double world_dist)
 {
   double cells_dist = max(0.0, ceil(world_dist / resolution_));
