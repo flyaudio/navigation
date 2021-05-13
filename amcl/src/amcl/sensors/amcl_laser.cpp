@@ -141,6 +141,7 @@ bool AMCLLaser::UpdateSensor(pf_t *pf, AMCLSensorData *data)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Determine the probability for the given pose
+//光束模型比较古老,实际已经不怎么使用,它的缺陷比较明显:在杂乱的环境(非结构化环境clutter)中，输入的小变化会导致输出的大变化
 double AMCLLaser::BeamModel(AMCLLaserData *data, pf_sample_set_t* set)
 {
   AMCLLaser *self;
@@ -211,7 +212,7 @@ double AMCLLaser::BeamModel(AMCLLaserData *data, pf_sample_set_t* set)
 
   return(total_weight);
 }
-
+//似然场模型不仅适应于结构化和非结构化的环境,而且在任何环境中的期望值对位姿都是平滑的,还可以通过查表的得到栅格的似然度
 double AMCLLaser::LikelihoodFieldModel(AMCLLaserData *data, pf_sample_set_t* set)
 {
   AMCLLaser *self;
@@ -228,34 +229,37 @@ double AMCLLaser::LikelihoodFieldModel(AMCLLaserData *data, pf_sample_set_t* set
 
   total_weight = 0.0;
 
-  // Compute the sample weights
+  // Compute the sample weights;遍历所有粒子,重新计算权重
   for (j = 0; j < set->sample_count; j++)
   {
     sample = set->samples + j;
     pose = sample->pose;
 
     // Take account of the laser pose relative to the robot
-    pose = pf_vector_coord_add(self->laser_pose, pose);
+    //take account of robot_T_laser??
+    pose = pf_vector_coord_add(self->laser_pose, pose);//激光雷达的位姿转换到世界坐标系
 
     p = 1.0;
 
     // Pre-compute a couple of things
-    double z_hit_denom = 2 * self->sigma_hit * self->sigma_hit;
-    double z_rand_mult = 1.0/data->range_max;
+    // 预计算似然域,离散栅格化,《P.R》Page 130,其实是对sigma和Zmax的赋值
+    double z_hit_denom = 2 * self->sigma_hit * self->sigma_hit;//测量噪声的方差
+    double z_rand_mult = 1.0/data->range_max;//无法解释的随机测量的分母
 
-    step = (data->range_count - 1) / (self->max_beams - 1);
+    step = (data->range_count - 1) / (self->max_beams - 1);//计算步长;只取一组数据中的max_beams个点
 
     // Step size must be at least 1
     if(step < 1)
       step = 1;
 
-    for (i = 0; i < data->range_count; i += step)
+    // 利用与最近物体的欧氏距离计算激光模型似然
+    for (i = 0; i < data->range_count; i += step)//遍历所有测量值
     {
       obs_range = data->ranges[i][0];
       obs_bearing = data->ranges[i][1];
 
       // This model ignores max range readings
-      if(obs_range >= data->range_max)
+      if(obs_range >= data->range_max)//忽略极大的range
         continue;
 
       // Check for NaN
@@ -264,11 +268,15 @@ double AMCLLaser::LikelihoodFieldModel(AMCLLaserData *data, pf_sample_set_t* set
 
       pz = 0.0;
 
-      // Compute the endpoint of the beam
+      // Compute the endpoint of the beam//有穿墙的嫌疑
+      //激光点通过两次转化到全局坐标系，  map    <- base_link<-   lase
       hit.v[0] = pose.v[0] + obs_range * cos(pose.v[2] + obs_bearing);
       hit.v[1] = pose.v[1] + obs_range * sin(pose.v[2] + obs_bearing);
 
       // Convert to map grid coords.
+      // 将激光数据在栅格地图中进行离散化, 获得激光点在栅格地图的坐标
+      // 计算函数在map_cspace.cpp的map_update_cspace中实现遍历计算
+      // 该函数是被AMCLLaser::SetModelLikelihoodField调用
       int mi, mj;
       mi = MAP_GXWX(self->map, hit.v[0]);
       mj = MAP_GYWY(self->map, hit.v[1]);
@@ -276,11 +284,12 @@ double AMCLLaser::LikelihoodFieldModel(AMCLLaserData *data, pf_sample_set_t* set
       // Part 1: Get distance from the hit to closest obstacle.
       // Off-map penalized as max distance
       if(!MAP_VALID(self->map, mi, mj))
-        z = self->map->max_occ_dist;
+        z = self->map->max_occ_dist;//不在地图范围内的当成最大距离
       else
-        z = self->map->cells[MAP_INDEX(self->map,mi,mj)].occ_dist;
+        z = self->map->cells[MAP_INDEX(self->map,mi,mj)].occ_dist;// 这个就是我们需要的最近距离，相当于《P.R》130页的dist
       // Gaussian model
       // NOTE: this should have a normalization of 1/(sqrt(2pi)*sigma)
+      // 计算Zt似然域的算法，在障碍物点周围用正态分布和均匀分布计算似然域，是关于dist的函数
       pz += self->z_hit * exp(-(z * z) / z_hit_denom);
       // Part 2: random measurements
       pz += self->z_rand * z_rand_mult;
@@ -289,10 +298,10 @@ double AMCLLaser::LikelihoodFieldModel(AMCLLaserData *data, pf_sample_set_t* set
 
       assert(pz <= 1.0);
       assert(pz >= 0.0);
-      //      p *= pz;
+      //      p *= pz;//这个是书上的公式
       // here we have an ad-hoc weighting scheme for combining beam probs
       // works well, though...
-      p += pz*pz*pz;
+      p += pz*pz*pz;//将每个激光点的似然域累加起来（多大范围）
     }
 
     sample->weight *= p;
@@ -318,7 +327,7 @@ double AMCLLaser::LikelihoodFieldModelProb(AMCLLaserData *data, pf_sample_set_t*
 
   total_weight = 0.0;
 
-  step = ceil((data->range_count) / static_cast<double>(self->max_beams)); 
+  step = ceil((data->range_count) / static_cast<double>(self->max_beams));//抽样 
   
   // Step size must be at least 1
   if(step < 1)
@@ -326,7 +335,7 @@ double AMCLLaser::LikelihoodFieldModelProb(AMCLLaserData *data, pf_sample_set_t*
 
   // Pre-compute a couple of things
   double z_hit_denom = 2 * self->sigma_hit * self->sigma_hit;
-  double z_rand_mult = 1.0/data->range_max;
+  double z_rand_mult = 1.0/data->range_max;//均匀分布,实际中是不是可以忽略这个?因为数据没这么糟糕
 
   double max_dist_prob = exp(-(self->map->max_occ_dist * self->map->max_occ_dist) / z_hit_denom);
 

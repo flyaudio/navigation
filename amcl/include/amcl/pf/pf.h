@@ -51,11 +51,13 @@ typedef void (*pf_action_model_fn_t) (void *action_data,
 
 // Function prototype for the sensor model; determines the probability
 // for the given set of sample poses.
+//传递函数
 typedef double (*pf_sensor_model_fn_t) (void *sensor_data, 
                                         struct _pf_sample_set_t* set);
 
 
 // Information for a single sample
+// 粒子
 typedef struct
 {
   // Pose represented by this sample
@@ -68,6 +70,7 @@ typedef struct
 
 
 // Information for a cluster of samples
+//对所有粒子聚类??
 typedef struct
 {
   // Number of samples
@@ -87,7 +90,7 @@ typedef struct
 
 
 // Information for a set of samples
-typedef struct _pf_sample_set_t
+typedef struct _pf_sample_set_t//所有粒子
 {
   // The samples
   int sample_count;

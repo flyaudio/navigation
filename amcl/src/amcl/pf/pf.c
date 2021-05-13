@@ -260,12 +260,13 @@ void pf_update_action(pf_t *pf, pf_action_model_fn_t action_fn, void *action_dat
 
 #include <float.h>
 // Update the filter with some new sensor observation
+//196页的AMCL算法的7~11行
 void pf_update_sensor(pf_t *pf, pf_sensor_model_fn_t sensor_fn, void *sensor_data)
 {
   int i;
   pf_sample_set_t *set;
   pf_sample_t *sample;
-  double total;
+  double total;//所有粒子的概率和
 
   set = pf->sets + pf->current_set;
 
@@ -279,7 +280,7 @@ void pf_update_sensor(pf_t *pf, pf_sensor_model_fn_t sensor_fn, void *sensor_dat
     for (i = 0; i < set->sample_count; i++)
     {
       sample = set->samples + i;
-      w_avg += sample->weight;
+      w_avg += sample->weight;//sum
       sample->weight /= total;
     }
     // Update running averages of likelihood of samples (Prob Rob p258)
@@ -295,7 +296,7 @@ void pf_update_sensor(pf_t *pf, pf_sensor_model_fn_t sensor_fn, void *sensor_dat
     //printf("w_avg: %e slow: %e fast: %e\n", 
            //w_avg, pf->w_slow, pf->w_fast);
   }
-  else
+  else//when出现0的情况??
   {
     // Handle zero total
     for (i = 0; i < set->sample_count; i++)

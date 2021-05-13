@@ -1019,13 +1019,13 @@ pf_vector_t
 AmclNode::uniformPoseGenerator(void* arg)
 {
   map_t* map = (map_t*)arg;
-#if NEW_UNIFORM_SAMPLING
-  unsigned int rand_index = drand48() * free_space_indices.size();
+#if NEW_UNIFORM_SAMPLING//跟else部分有啥不一样??
+  unsigned int rand_index = drand48() * free_space_indices.size();//在grid上取random值
   std::pair<int,int> free_point = free_space_indices[rand_index];
   pf_vector_t p;
   p.v[0] = MAP_WXGX(map, free_point.first);
   p.v[1] = MAP_WYGY(map, free_point.second);
-  p.v[2] = drand48() * 2 * M_PI - M_PI;
+  p.v[2] = drand48() * 2 * M_PI - M_PI;//why not 2PI 的范围采样??
 #else
   double min_x, max_x, min_y, max_y;
 
