@@ -150,7 +150,7 @@ class AmclNode
 
     bool sent_first_transform_;
 
-    tf2::Transform latest_tf_;
+    tf2::Transform latest_tf_;//map_T_odom
     bool latest_tf_valid_;
 
     // Pose-generating function used to uniformly distribute particles over
@@ -179,14 +179,14 @@ class AmclNode
     void applyInitialPose();
 
     //parameter for what odom to use
-    std::string odom_frame_id_;
+    std::string odom_frame_id_;//"odom"
 
     //paramater to store latest odom pose
-    geometry_msgs::PoseStamped latest_odom_pose_;
+    geometry_msgs::PoseStamped latest_odom_pose_;//odom_T_base_link
 
     //parameter for what base to use
-    std::string base_frame_id_;
-    std::string global_frame_id_;
+    std::string base_frame_id_;//"base_link"
+    std::string global_frame_id_;//"map"
 
     bool use_map_topic_;
     bool first_map_only_;
@@ -206,14 +206,14 @@ class AmclNode
     tf2_ros::MessageFilter<sensor_msgs::LaserScan>* laser_scan_filter_;
     ros::Subscriber initial_pose_sub_;
     std::vector< AMCLLaser* > lasers_;
-    std::vector< bool > lasers_update_;
-    std::map< std::string, int > frame_to_laser_;
+    std::vector< bool > lasers_update_;//update motion modle & measurement model
+    std::map< std::string, int > frame_to_laser_;//key=frame id "scan"
 
     // Particle filter
     pf_t *pf_;
     double pf_err_, pf_z_;
     bool pf_init_;
-    pf_vector_t pf_odom_pose_;
+    pf_vector_t pf_odom_pose_;  //odom_T_base_link
     double d_thresh_, a_thresh_;
     int resample_interval_;
     int resample_count_;
@@ -284,7 +284,7 @@ class AmclNode
 
     void reconfigureCB(amcl::AMCLConfig &config, uint32_t level);
 
-    ros::Time last_laser_received_ts_;
+    ros::Time last_laser_received_ts_;//timestamp
     ros::Duration laser_check_interval_;
     void checkLaserReceived(const ros::TimerEvent& event);
 };
@@ -458,17 +458,20 @@ AmclNode::AmclNode() :
 
   pose_pub_ = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("amcl_pose", 2, true);
   particlecloud_pub_ = nh_.advertise<geometry_msgs::PoseArray>("particlecloud", 2, true);
+
+  //注册服务;没有给定初始位姿的情况下在全局范围内初始化粒子位姿
   global_loc_srv_ = nh_.advertiseService("global_localization", 
 					 &AmclNode::globalLocalizationCallback,
                                          this);
   nomotion_update_srv_= nh_.advertiseService("request_nomotion_update", &AmclNode::nomotionUpdateCallback, this);
+  //1
   set_map_srv_= nh_.advertiseService("set_map", &AmclNode::setMapCallback, this);
 
   laser_scan_sub_ = new message_filters::Subscriber<sensor_msgs::LaserScan>(nh_, scan_topic_, 100);
   laser_scan_filter_ = 
           new tf2_ros::MessageFilter<sensor_msgs::LaserScan>(*laser_scan_sub_,
                                                              *tf_,
-                                                             odom_frame_id_,
+                                                             odom_frame_id_,//确保能转换到"odom"
                                                              100,
                                                              nh_);
   laser_scan_filter_->registerCallback(boost::bind(&AmclNode::laserReceived,
@@ -493,7 +496,7 @@ AmclNode::AmclNode() :
                                        boost::bind(&AmclNode::checkLaserReceived, this, _1));
 
   diagnosic_updater_.setHardwareID("None");
-  diagnosic_updater_.add("Standard deviation", this, &AmclNode::standardDeviationDiagnostics);
+  diagnosic_updater_.add("Standard deviation", this, &AmclNode::standardDeviationDiagnostics);//执行的频率是多少??
 }
 
 void AmclNode::reconfigureCB(AMCLConfig &config, uint32_t level)
@@ -582,7 +585,7 @@ void AmclNode::reconfigureCB(AMCLConfig &config, uint32_t level)
   }	
   pf_ = pf_alloc(min_particles_, max_particles_,
                  alpha_slow_, alpha_fast_,
-                 (pf_init_model_fn_t)AmclNode::uniformPoseGenerator,
+                 (pf_init_model_fn_t)AmclNode::uniformPoseGenerator,//传入初始化函数
                  (void *)map_);
   pf_err_ = config.kld_err; 
   pf_z_ = config.kld_z; 
@@ -801,7 +804,7 @@ void AmclNode::updatePoseFromServer()
 }
 
 void 
-AmclNode::checkLaserReceived(const ros::TimerEvent& event)
+AmclNode::checkLaserReceived(const ros::TimerEvent& event)//定时执行
 {
   ros::Duration d = ros::Time::now() - last_laser_received_ts_;
   if(d > laser_check_interval_)
@@ -842,6 +845,7 @@ AmclNode::mapReceived(const nav_msgs::OccupancyGridConstPtr& msg)
   first_map_received_ = true;
 }
 
+//收到地图service后,地图转换,记录障碍物坐标,初始为pf_t结构体
 void
 AmclNode::handleMapMessage(const nav_msgs::OccupancyGrid& msg)
 {
@@ -995,12 +999,12 @@ AmclNode::getOdomPose(geometry_msgs::PoseStamped& odom_pose,
 {
   // Get the robot's pose
   geometry_msgs::PoseStamped ident;
-  ident.header.frame_id = stripSlash(f);
+  ident.header.frame_id = stripSlash(f);//"base_link"
   ident.header.stamp = t;
   tf2::toMsg(tf2::Transform::getIdentity(), ident.pose);
   try
   {
-    this->tf_->transform(ident, odom_pose, odom_frame_id_);
+    this->tf_->transform(ident, odom_pose, odom_frame_id_);//odom_T_base_link
   }
   catch(tf2::TransformException e)
   {
@@ -1079,6 +1083,7 @@ AmclNode::nomotionUpdateCallback(std_srvs::Empty::Request& req,
 	return true;
 }
 
+//service包括地图和初始位置
 bool
 AmclNode::setMapCallback(nav_msgs::SetMap::Request& req,
                          nav_msgs::SetMap::Response& res)
@@ -1092,7 +1097,7 @@ AmclNode::setMapCallback(nav_msgs::SetMap::Request& req,
 void
 AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
 {
-  std::string laser_scan_frame_id = stripSlash(laser_scan->header.frame_id);
+  std::string laser_scan_frame_id = stripSlash(laser_scan->header.frame_id);//"scan"
   last_laser_received_ts_ = ros::Time::now();
   if( map_ == NULL ) {
     return;
@@ -1100,6 +1105,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
   boost::recursive_mutex::scoped_lock lr(configuration_mutex_);
   int laser_index = -1;
 
+  //a.获取base_link_T_scan
   // Do we have the base->base_laser Tx yet?
   if(frame_to_laser_.find(laser_scan_frame_id) == frame_to_laser_.end())
   {
@@ -1113,10 +1119,10 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     ident.header.stamp = ros::Time();
     tf2::toMsg(tf2::Transform::getIdentity(), ident.pose);
 
-    geometry_msgs::PoseStamped laser_pose;
+    geometry_msgs::PoseStamped laser_pose;//base_link_T_scan
     try
     {
-      this->tf_->transform(ident, laser_pose, base_frame_id_);
+      this->tf_->transform(ident, laser_pose, base_frame_id_);//base_link_T_scan
     }
     catch(tf2::TransformException& e)
     {
@@ -1145,7 +1151,8 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
   }
 
   // Where was the robot when this scan was taken?
-  pf_vector_t pose;
+  //odom 的原点是机器人启动时刻的位置
+  pf_vector_t pose;//odom_T_base_link
   if(!getOdomPose(latest_odom_pose_, pose.v[0], pose.v[1], pose.v[2],
                   laser_scan->header.stamp, base_frame_id_))
   {
@@ -1164,11 +1171,11 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     delta.v[1] = pose.v[1] - pf_odom_pose_.v[1];
     delta.v[2] = angle_diff(pose.v[2], pf_odom_pose_.v[2]);
 
-    // See if we should update the filter
+    // See if we should update the filter;有一定位移才更新测量值
     bool update = fabs(delta.v[0]) > d_thresh_ ||
                   fabs(delta.v[1]) > d_thresh_ ||
                   fabs(delta.v[2]) > a_thresh_;
-    update = update || m_force_update;
+    update = update || m_force_update;//有足够位移 | request nomotion update
     m_force_update=false;
 
     // Set the laser update flags
@@ -1188,7 +1195,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
 
     // Should update sensor data
     for(unsigned int i=0; i < lasers_update_.size(); i++)
-      lasers_update_[i] = true;
+      lasers_update_[i] = true;//first time,更新测量值
 
     force_publication = true;
 
@@ -1238,8 +1245,8 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     tf2::convert(q, inc_q.quaternion);
     try
     {
-      tf_->transform(min_q, min_q, base_frame_id_);
-      tf_->transform(inc_q, inc_q, base_frame_id_);
+      tf_->transform(min_q, min_q, base_frame_id_);//base_link_T_scan
+      tf_->transform(inc_q, inc_q, base_frame_id_);//其实是一个标定好的固定值,搞复杂了
     }
     catch(tf2::TransformException& e)
     {
@@ -1267,7 +1274,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     else
       range_min = laser_scan->range_min;
     // The AMCLLaserData destructor will free this memory
-    ldata.ranges = new double[ldata.range_count][2];
+    ldata.ranges = new double[ldata.range_count][2];//极坐标
     ROS_ASSERT(ldata.ranges);
     for(int i=0;i<ldata.range_count;i++)
     {
@@ -1281,7 +1288,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
       ldata.ranges[i][1] = angle_min +
               (i * angle_increment);
     }
-
+//每个粒子更新scan测量值
     lasers_[laser_index]->UpdateSensor(pf_, (AMCLSensorData*)&ldata);
 
     lasers_update_[laser_index] = false;
@@ -1289,7 +1296,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     pf_odom_pose_ = pose;
 
     // Resample the particles
-    if(!(++resample_count_ % resample_interval_))
+    if(!(++resample_count_ % resample_interval_))//定期re-sample
     {
       pf_update_resample(pf_);
       resampled = true;
@@ -1319,13 +1326,14 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     }
   }
 
-  if(resampled || force_publication)
+  if(resampled || force_publication)//已经resample
   {
     // Read out the current hypotheses
     double max_weight = 0.0;
     int max_weight_hyp = -1;
     std::vector<amcl_hyp_t> hyps;
     hyps.resize(pf_->sets[pf_->current_set].cluster_count);
+	//遍历聚类后的粒子set,挑选weight最大的粒子集,该粒子集的平均位姿就是本次更新后的机器人估计位姿
     for(int hyp_count = 0;
         hyp_count < pf_->sets[pf_->current_set].cluster_count; hyp_count++)
     {
@@ -1431,7 +1439,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
         return;
       }
 
-      tf2::convert(odom_to_map.pose, latest_tf_);
+      tf2::convert(odom_to_map.pose, latest_tf_);//map_T_odom
       latest_tf_valid_ = true;
 
       if (tf_broadcast_ == true)
@@ -1439,12 +1447,12 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
         // We want to send a transform that is good up until a
         // tolerance time so that odom can be used
         ros::Time transform_expiration = (laser_scan->header.stamp +
-                                          transform_tolerance_);
+                                          transform_tolerance_);//future time
         geometry_msgs::TransformStamped tmp_tf_stamped;
-        tmp_tf_stamped.header.frame_id = global_frame_id_;
+        tmp_tf_stamped.header.frame_id = global_frame_id_;//"map"
         tmp_tf_stamped.header.stamp = transform_expiration;
-        tmp_tf_stamped.child_frame_id = odom_frame_id_;
-        tf2::convert(latest_tf_.inverse(), tmp_tf_stamped.transform);
+        tmp_tf_stamped.child_frame_id = odom_frame_id_;//"odom"
+        tf2::convert(latest_tf_.inverse(), tmp_tf_stamped.transform);//map_T_odom
 
         this->tfb_->sendTransform(tmp_tf_stamped);
         sent_first_transform_ = true;
@@ -1474,7 +1482,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     // Is it time to save our last pose to the param server
     ros::Time now = ros::Time::now();
     if((save_pose_period.toSec() > 0.0) &&
-       (now - save_pose_last_time) >= save_pose_period)
+       (now - save_pose_last_time) >= save_pose_period)//周期性保存??
     {
       this->savePoseToServer();
       save_pose_last_time = now;

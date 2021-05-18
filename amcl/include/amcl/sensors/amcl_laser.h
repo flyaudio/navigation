@@ -119,7 +119,7 @@ class AMCLLaser : public AMCLSensor
   private: pf_vector_t laser_pose;
   
   // Max beams to consider
-  private: int max_beams;
+  private: int max_beams;//??
 
   // Beam skipping parameters (used by LikelihoodFieldModelProb model)
   private: bool do_beamskip; 
@@ -136,13 +136,13 @@ class AMCLLaser : public AMCLSensor
 
   // Laser model params
   //
-  // Mixture params for the components of the model; must sum to 1
+  // Mixture params for the components of the model; must sum to 1;各部分占的比例
   private: double z_hit;
   private: double z_short;
   private: double z_max;
   private: double z_rand;
   //
-  // Stddev of Gaussian model for laser hits.
+  // Stddev of Gaussian model for laser hits.;表示laser的测量误差
   private: double sigma_hit;
   // Decay rate of exponential model for short readings.
   private: double lambda_short;

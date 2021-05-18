@@ -119,7 +119,7 @@ AMCLLaser::SetModelLikelihoodFieldProb(double z_hit,
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// Apply the laser sensor model
+// Apply the laser sensor model;每个粒子更新测量值
 bool AMCLLaser::UpdateSensor(pf_t *pf, AMCLSensorData *data)
 {
   if (this->max_beams < 2)
@@ -310,7 +310,7 @@ double AMCLLaser::LikelihoodFieldModel(AMCLLaserData *data, pf_sample_set_t* set
 
   return(total_weight);
 }
-
+//prob模型是检查某一个的角度的异常值，那么速度快/转弯时的检测应该是有问题的吧
 double AMCLLaser::LikelihoodFieldModelProb(AMCLLaserData *data, pf_sample_set_t* set)
 {
   AMCLLaser *self;
@@ -361,7 +361,7 @@ double AMCLLaser::LikelihoodFieldModelProb(AMCLLaserData *data, pf_sample_set_t*
   int beam_ind = 0;
   
   //realloc indicates if we need to reallocate the temp data structure needed to do beamskipping 
-  bool realloc = false; 
+  bool realloc = false; //是否需要重新分配需要被跳过的临时数据
 
   if(do_beamskip){
     if(self->max_obs < self->max_beams){
@@ -459,11 +459,11 @@ double AMCLLaser::LikelihoodFieldModelProb(AMCLLaserData *data, pf_sample_set_t*
     int skipped_beam_count = 0; 
     for (beam_ind = 0; beam_ind < self->max_beams; beam_ind++){
       if((obs_count[beam_ind] / static_cast<double>(set->sample_count)) > beam_skip_threshold){
-	obs_mask[beam_ind] = true;
+		obs_mask[beam_ind] = true;
       }
       else{
-	obs_mask[beam_ind] = false;
-	skipped_beam_count++; 
+		obs_mask[beam_ind] = false;//该点不用于计算概率和.但是如果这样的点多了，说明收敛到了一个错误的位姿，则所有的点都用来计算概率和
+		skipped_beam_count++; 
       }
     }
 

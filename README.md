@@ -15,3 +15,12 @@ Related stacks:
 
 For discussion, please check out the
 https://groups.google.com/group/ros-sig-navigation mailing list.
+
+
+
+class AMCLOdomData : public AMCLSensorData
+class AMCLLaserData : public AMCLSensorData
+
+class AMCLOdom : public AMCLSensor
+class AMCLLaser : public AMCLSensor
+

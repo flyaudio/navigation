@@ -39,24 +39,25 @@ class CachedDistanceMap
     CachedDistanceMap(double scale, double max_dist) : 
       distances_(NULL), scale_(scale), max_dist_(max_dist) 
     {
-      cell_radius_ = max_dist / scale;
+      cell_radius_ = max_dist / scale;//2m / 0.01m = 200
       distances_ = new double *[cell_radius_+2];
       for(int i=0; i<=cell_radius_+1; i++)
       {
-	distances_[i] = new double[cell_radius_+2];
-        for(int j=0; j<=cell_radius_+1; j++)
-	{
-	  distances_[i][j] = sqrt(i*i + j*j);
-	}
+		distances_[i] = new double[cell_radius_+2];//为每个x新建一个纵列(y)的指针;就是202*202的正方形
+	    for(int j=0; j<=cell_radius_+1; j++)
+		{
+		  distances_[i][j] = sqrt(i*i + j*j);//与中心点的距离,unit=grid
+		}
       }
     }
+	  
     ~CachedDistanceMap()
     {
       if(distances_)
       {
-	for(int i=0; i<=cell_radius_+1; i++)
-	  delete[] distances_[i];
-	delete[] distances_;
+		for(int i=0; i<=cell_radius_+1; i++)
+		  delete[] distances_[i];
+		delete[] distances_;
       }
     }
     double** distances_;
@@ -65,7 +66,7 @@ class CachedDistanceMap
     int cell_radius_;
 };
 
-
+//priority_queue用到
 bool operator<(const CellData& a, const CellData& b)
 {
   return a.map_->cells[MAP_INDEX(a.map_, a.i_, a.j_)].occ_dist > a.map_->cells[MAP_INDEX(b.map_, b.i_, b.j_)].occ_dist;
@@ -117,6 +118,7 @@ void enqueue(map_t* map, int i, int j,
 }
 
 // Update the cspace distance values
+//用一个队列实现类似一格格膨胀的效果
 void map_update_cspace(map_t *map, double max_occ_dist)
 {
   unsigned char* marked;
@@ -137,21 +139,23 @@ void map_update_cspace(map_t *map, double max_occ_dist)
     cell.src_i_ = cell.i_ = i;
     for(int j=0; j<map->size_y; j++)
     {
-      if(map->cells[MAP_INDEX(map, i, j)].occ_state == +1)
+      if(map->cells[MAP_INDEX(map, i, j)].occ_state == +1)//障碍物
       {
-	map->cells[MAP_INDEX(map, i, j)].occ_dist = 0.0;
-	cell.src_j_ = cell.j_ = j;
-	marked[MAP_INDEX(map, i, j)] = 1;
-	Q.push(cell);
+		map->cells[MAP_INDEX(map, i, j)].occ_dist = 0.0;//距离为0
+		cell.src_j_ = cell.j_ = j;
+		marked[MAP_INDEX(map, i, j)] = 1;
+		Q.push(cell);
       }
       else
-	map->cells[MAP_INDEX(map, i, j)].occ_dist = max_occ_dist;
+		map->cells[MAP_INDEX(map, i, j)].occ_dist = max_occ_dist;
     }
   }
 
+//不仅处理障碍物栅格,而且从近到远处理所有栅格与最近障碍物距离
   while(!Q.empty())
   {
     CellData current_cell = Q.top();
+	//将距离障碍物最近的某个栅格的上下左右的栅格加入
     if(current_cell.i_ > 0)
       enqueue(map, current_cell.i_-1, current_cell.j_, 
 	      current_cell.src_i_, current_cell.src_j_,
@@ -168,7 +172,7 @@ void map_update_cspace(map_t *map, double max_occ_dist)
       enqueue(map, current_cell.i_, current_cell.j_+1, 
 	      current_cell.src_i_, current_cell.src_j_,
 	      Q, cdm, marked);
-
+//这里弹出的是加入上下左右后重新排序之后的最小数据的栅格
     Q.pop();
   }
 
